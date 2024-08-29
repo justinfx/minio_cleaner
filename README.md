@@ -12,8 +12,8 @@ This project is still WIP
 
 - [x] pkg: Nats Jetstream event consumer
 - [x] pkg: SQLite event store
-- [ ] pkg: Minio cleanup policy manager
-- [ ] CLI
+- [ ] pkg: Minio cleanup policy manager ([#2](https://github.com/justinfx/minio_cleaner/issues/2))
+- [ ] CLI ([#1](https://github.com/justinfx/minio_cleaner/issues/1))
 - [ ] tests: end-to-end tests
 - [ ] tests: Docker compose configuration
 
