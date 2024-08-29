@@ -82,7 +82,7 @@ func TestBucketStore_Set(t *testing.T) {
 
 		item.AccessTime = time.Now().Add(1 * time.Hour)
 		item.Size = 20
-		require.NoError(t, store.Set(item))
+		require.NoError(t, store.SetOrUpdate(item))
 		actual, err = store.Get(item.Bucket, item.Key)
 		require.NoError(t, err)
 		assert.Equal(t, item.Size, actual.Size)
@@ -104,6 +104,32 @@ func TestBucketStore_Set(t *testing.T) {
 		n, err = store.Count(bucket)
 		require.NoError(t, err)
 		require.Equal(t, len(items), n)
+	})
+
+	t.Run("with update", func(t *testing.T) {
+		item := BucketStoreItem{Bucket: "withupdate", Key: "newKey1", AccessTime: time.Now(), Size: 10}
+		require.NoError(t, store.SetOrUpdate(&item))
+		item2 := item
+		item2.AccessTime = time.Now().Add(1 * time.Hour)
+		item2.Size = 20
+		require.NoError(t, store.SetOrUpdate(&item2))
+		actual, err := store.Get(item2.Bucket, item2.Key)
+		require.NoError(t, err)
+		assert.Equal(t, item2.Size, actual.Size)
+		assert.WithinDuration(t, item2.AccessTime, actual.AccessTime, 0)
+	})
+
+	t.Run("no update", func(t *testing.T) {
+		item := BucketStoreItem{Bucket: "noupdate", Key: "newKey1", AccessTime: time.Now(), Size: 10}
+		require.NoError(t, store.Set(&item))
+		item2 := item
+		item2.AccessTime = time.Now().Add(1 * time.Hour)
+		item2.Size = 20
+		require.NoError(t, store.Set(&item2))
+		actual, err := store.Get(item2.Bucket, item2.Key)
+		require.NoError(t, err)
+		assert.Equal(t, item.Size, actual.Size)
+		assert.WithinDuration(t, item.AccessTime, actual.AccessTime, 0)
 	})
 }
 
@@ -277,19 +303,26 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 
 type MockStore struct {
 	ConsoleBucketStore
-	NumSet    int
-	NumUpdate int
-	NumDelete int
+	NumSet         int
+	NumSetOrUpdate int
+	NumUpdate      int
+	NumDelete      int
 }
 
 func (m *MockStore) reset() {
 	m.NumSet = 0
+	m.NumSetOrUpdate = 0
 	m.NumUpdate = 0
 	m.NumDelete = 0
 }
 
 func (m *MockStore) Set(_ ...*BucketStoreItem) error {
 	m.NumSet += 1
+	return nil
+}
+
+func (m *MockStore) SetOrUpdate(_ ...*BucketStoreItem) error {
+	m.NumSetOrUpdate += 1
 	return nil
 }
 
@@ -328,7 +361,8 @@ func TestStoreEvents(t *testing.T) {
 	select {
 	case events <- newBucketEvent(notification.ObjectCreatedCopy, "bucket", "key1"):
 		<-ready
-		assert.Equal(t, 1, store.NumSet)
+		assert.Equal(t, 0, store.NumSet)
+		assert.Equal(t, 1, store.NumSetOrUpdate)
 		assert.Equal(t, 0, store.NumUpdate)
 		assert.Equal(t, 0, store.NumDelete)
 	case <-ctx.Done():
@@ -338,7 +372,19 @@ func TestStoreEvents(t *testing.T) {
 	select {
 	case events <- newBucketEvent(notification.ObjectAccessedGet, "bucket", "key1"):
 		<-ready
+		assert.Equal(t, 0, store.NumSet)
+		assert.Equal(t, 1, store.NumSetOrUpdate)
+		assert.Equal(t, 1, store.NumUpdate)
+		assert.Equal(t, 0, store.NumDelete)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	select {
+	case events <- newBucketEvent(notification.ObjectAccessedHead, "bucket", "key1"):
+		<-ready
 		assert.Equal(t, 1, store.NumSet)
+		assert.Equal(t, 1, store.NumSetOrUpdate)
 		assert.Equal(t, 1, store.NumUpdate)
 		assert.Equal(t, 0, store.NumDelete)
 	case <-ctx.Done():
@@ -349,6 +395,7 @@ func TestStoreEvents(t *testing.T) {
 	case events <- newBucketEvent(notification.ObjectRemovedDelete, "bucket", "key1"):
 		<-ready
 		assert.Equal(t, 1, store.NumSet)
+		assert.Equal(t, 1, store.NumSetOrUpdate)
 		assert.Equal(t, 1, store.NumUpdate)
 		assert.Equal(t, 1, store.NumDelete)
 	case <-ctx.Done():
@@ -360,6 +407,7 @@ func TestStoreEvents(t *testing.T) {
 	select {
 	case events <- newBucketEvent(notification.ObjectTransitionCompleted, "bucket", "key1"):
 		assert.Equal(t, 0, store.NumSet)
+		assert.Equal(t, 0, store.NumSetOrUpdate)
 		assert.Equal(t, 0, store.NumUpdate)
 		assert.Equal(t, 0, store.NumDelete)
 	case <-ctx.Done():

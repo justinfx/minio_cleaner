@@ -17,7 +17,7 @@ type NatsReceiver struct {
 	consumerCfg jetstream.ConsumerConfig
 	stream      string
 
-	UpdateFromStat bool
+	SetFromStat bool
 }
 
 // NewNatsReceiver constructs a NatsReceiver using Nats connection options,
@@ -102,9 +102,13 @@ func (r *NatsReceiver) Listen(ctx context.Context, events chan<- *BucketEvent) e
 		}
 
 		// Only interested in a subset of events
-		if r.UpdateFromStat && evt.IsStat() {
-			// allow
-		} else if evt.Type() == BucketEventOther {
+		typ := evt.Type()
+		switch typ {
+		case BucketEventOther, BucketEventStat:
+			if typ == BucketEventStat && r.SetFromStat {
+				// allow
+				break
+			}
 			msg.Ack()
 			slog.Debug("Skipping BucketEvent", "event", &evt)
 			continue

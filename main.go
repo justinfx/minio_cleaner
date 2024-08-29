@@ -30,7 +30,7 @@ func main() {
 	durable := "minio-bucket-consumer"
 	//dbpath := "minio_cleaner.sqlite"
 	dbpath := pkg.SQLiteInMemory
-	updateFromStat := true
+	setFromStat := true
 
 	consumer := jetstream.ConsumerConfig{
 		Name:              durable,
@@ -49,7 +49,7 @@ func main() {
 	)
 
 	receiver := pkg.NewNatsReceiver(opts, stream, consumer)
-	receiver.UpdateFromStat = updateFromStat
+	receiver.SetFromStat = setFromStat
 
 	//store = pkg.NewConsoleBucketStore()
 	store, err = pkg.NewSQLiteBucketStore(dbpath)

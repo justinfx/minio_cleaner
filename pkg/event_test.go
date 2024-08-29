@@ -14,6 +14,7 @@ func TestBucketEvent_Type(t *testing.T) {
 		want      BucketEventType
 	}{
 		{notification.ObjectAccessedGet, BucketEventRead},
+		{notification.ObjectAccessedHead, BucketEventStat},
 		{notification.ObjectCreatedCopy, BucketEventWrite},
 		{notification.ObjectCreatedPut, BucketEventWrite},
 		{notification.ObjectCreatedPost, BucketEventWrite},
@@ -24,22 +25,6 @@ func TestBucketEvent_Type(t *testing.T) {
 		e := &BucketEvent{EventName: tt.eventType}
 		if got := e.Type(); got != tt.want {
 			t.Errorf("For event %v, go = %v, want %v", e.EventName, got, tt.want)
-		}
-	}
-}
-
-func TestBucketEvent_IsStat(t *testing.T) {
-	tests := []struct {
-		eventType notification.EventType
-		want      bool
-	}{
-		{notification.ObjectAccessedGet, false},
-		{notification.ObjectAccessedHead, true},
-	}
-	for _, tt := range tests {
-		e := &BucketEvent{EventName: tt.eventType}
-		if got := e.IsStat(); got != tt.want {
-			t.Errorf("For event %v, got = %v, want %v", e.EventName, got, tt.want)
 		}
 	}
 }

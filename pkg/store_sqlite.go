@@ -115,10 +115,19 @@ func (s *SQLiteBucketStore) Get(bucket, key string) (*BucketStoreItem, error) {
 }
 
 func (s *SQLiteBucketStore) Set(items ...*BucketStoreItem) error {
-	const query = `
-		INSERT INTO bucket_events (bucket, key, access_time, size) VALUES (?, ?, ?, ?)
-			ON CONFLICT DO UPDATE SET access_time=EXCLUDED.access_time, size=EXCLUDED.size;
-	`
+	return s.set(false, items...)
+}
+
+func (s *SQLiteBucketStore) SetOrUpdate(items ...*BucketStoreItem) error {
+	return s.set(true, items...)
+}
+
+func (s *SQLiteBucketStore) set(update bool, items ...*BucketStoreItem) error {
+	const (
+		query     = `INSERT INTO bucket_events (bucket, key, access_time, size) VALUES (?, ?, ?, ?) %s;`
+		updateQ   = `ON CONFLICT DO UPDATE SET access_time=EXCLUDED.access_time, size=EXCLUDED.size`
+		noUpdateQ = `ON CONFLICT DO NOTHING`
+	)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -126,7 +135,14 @@ func (s *SQLiteBucketStore) Set(items ...*BucketStoreItem) error {
 	}
 	defer tx.Rollback()
 
-	q, err := tx.Prepare(query)
+	var stmt string
+	if update {
+		stmt = fmt.Sprintf(query, updateQ)
+	} else {
+		stmt = fmt.Sprintf(query, noUpdateQ)
+	}
+
+	q, err := tx.Prepare(stmt)
 	if err != nil {
 		return fmt.Errorf("failed to prepare query: %w", err)
 	}

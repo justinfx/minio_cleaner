@@ -29,8 +29,10 @@ type BucketStore interface {
 	// If item does not exist, return nil item.
 	// Error is non nil only for problems with Store communication.
 	Get(bucket, key string) (*BucketStoreItem, error)
-	// Set 1 or more items in the store.
+	// Set 1 or more items in the store, if they do not already exist.
 	Set(items ...*BucketStoreItem) error
+	// SetOrUpdate sets 1 or more items in the store, and update the access time if they already exist.
+	SetOrUpdate(items ...*BucketStoreItem) error
 	// Update AccessTime and Size for existing items in the Store.
 	Update(items ...*BucketStoreItem) error
 	// Delete existing items.
@@ -53,25 +55,17 @@ func NewConsoleBucketStore() *ConsoleBucketStore {
 	return &ConsoleBucketStore{enc: json.NewEncoder(os.Stdout)}
 }
 
-func (s *ConsoleBucketStore) Count(_ string) (int, error) {
-	return 0, nil
-}
+func (s *ConsoleBucketStore) Count(_ string) (int, error) { return 0, nil }
 
-func (s *ConsoleBucketStore) Get(bucket, key string) (*BucketStoreItem, error) {
-	return nil, nil
-}
+func (s *ConsoleBucketStore) Get(bucket, key string) (*BucketStoreItem, error) { return nil, nil }
 
-func (s *ConsoleBucketStore) Set(items ...*BucketStoreItem) error {
-	return s.log(items...)
-}
+func (s *ConsoleBucketStore) Set(items ...*BucketStoreItem) error { return s.log(items...) }
 
-func (s *ConsoleBucketStore) Update(items ...*BucketStoreItem) error {
-	return s.log(items...)
-}
+func (s *ConsoleBucketStore) SetOrUpdate(items ...*BucketStoreItem) error { return s.log(items...) }
 
-func (s *ConsoleBucketStore) Delete(items ...*BucketStoreItem) error {
-	return s.log(items...)
-}
+func (s *ConsoleBucketStore) Update(items ...*BucketStoreItem) error { return s.log(items...) }
+
+func (s *ConsoleBucketStore) Delete(items ...*BucketStoreItem) error { return s.log(items...) }
 
 func (s *ConsoleBucketStore) TakeOldest(bucket string, limit int) ([]*BucketStoreItem, error) {
 	return nil, nil
@@ -126,15 +120,20 @@ func StoreEvents(ctx context.Context, events <-chan *BucketEvent, store BucketSt
 			}
 
 			// route item to the right action
-			if typ := evt.Type(); typ == BucketEventWrite {
-				if err = store.Set(item); err != nil {
-					slog.Error("failed to handle store event", "error", err)
+			switch evt.Type() {
+			case BucketEventWrite:
+				if err = store.SetOrUpdate(item); err != nil {
+					slog.Error("failed to handle write event", "error", err)
 				}
-			} else if typ == BucketEventRead || evt.IsStat() {
+			case BucketEventStat:
+				if err = store.Set(item); err != nil {
+					slog.Error("failed to handle stat event", "error", err)
+				}
+			case BucketEventRead:
 				if err = store.Update(item); err != nil {
 					slog.Error("failed to handle update event", "error", err)
 				}
-			} else if typ == BucketEventDelete {
+			case BucketEventDelete:
 				if err = store.Delete(item); err != nil {
 					slog.Error("failed to handle delete event", "error", err)
 				}
