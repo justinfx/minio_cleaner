@@ -14,6 +14,8 @@ This project is still WIP
 - [x] pkg: SQLite event store
 - [ ] pkg: Minio cleanup policy manager
 - [ ] CLI
+- [ ] tests: end-to-end tests
+- [ ] tests: Docker compose configuration
 
 ## Motivation
 
@@ -37,3 +39,40 @@ Bucket events are stored in an SQLite database, and updated by access or deletio
 A cleanup policy can be defined, with access to the Minio cluster. Based on cluster size thresholds, the
 cleanup manager can begin deleting objects with the oldest access time, until the cluster size reduces to
 an acceptable value.
+
+## Testing
+
+WIP (pending a docker compose)
+
+Start minio
+
+```
+docker run -it --rm \
+    -p 9000:9000 \
+    -p 9010:9010 \
+    -v /tmp/minio/data:/tmp/data:rw \
+    minio/minio server --console-address :9010 /tmp/data 
+```
+
+Start Nats Jetstream
+
+```
+docker run -p 4222:4222 nats -js
+```
+
+Download [Nats CLI tool](https://github.com/nats-io/natscli/releases), and add a stream
+
+```
+# create new stream
+nats stream add --defaults --subjects='minio.event' MINIO
+# listen to raw events (for debugging)
+nats subscribe minio.event --stream MINIO --new
+```
+
+Log into Minio console via http://localhost:9000/
+* Configure Nats Event Destination (subject: 'minio.event' to match our consumer)
+* Create a bucket
+* Enable events (put, get, delete) for new bucket, to Nats endpoint.
+
+At this point, any bucket write/read/delete operations should trigger events into Nats, and then into
+the cleaner service.
