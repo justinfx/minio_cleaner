@@ -223,21 +223,34 @@ func (s *SQLiteBucketStore) Delete(items ...*BucketStoreItem) error {
 	return nil
 }
 
-func (s *SQLiteBucketStore) TakeOldest(bucket string, limit int) ([]*BucketStoreItem, error) {
+func (s *SQLiteBucketStore) TakeOldest(bucket string, totalSize int) ([]*BucketStoreItem, error) {
+	// delete and return the oldest accessed items, up to either a total size, or am item limit
 	const query = `
+		WITH rows_to_delete AS (
+			SELECT bucket, key, access_time, size
+			FROM (
+				SELECT
+					bucket, key, access_time, size,
+					SUM(size) OVER (
+						ORDER BY access_time ROWS UNBOUNDED PRECEDING
+					) AS RunningSize
+				FROM bucket_events
+				WHERE bucket = ?
+				ORDER BY access_time
+			) sub
+			WHERE RunningSize <= ?
+			LIMIT 50000
+		)
 		DELETE FROM bucket_events
-		  WHERE (bucket, key) IN (
-			SELECT bucket, key FROM bucket_events
-			WHERE bucket = ?
-			ORDER BY access_time
-			LIMIT ?
-		  )
+		WHERE (bucket, key) IN (
+			SELECT bucket, key FROM rows_to_delete
+		)
 		RETURNING key, access_time, size;
 	`
 
-	rows, err := s.db.Query(query, bucket, limit)
+	rows, err := s.db.Query(query, bucket, totalSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query bucket event records: %w", err)
+		return nil, fmt.Errorf("failed to query bucket %q event records: %w", bucket, err)
 	}
 
 	var ret []*BucketStoreItem

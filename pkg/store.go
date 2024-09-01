@@ -37,10 +37,8 @@ type BucketStore interface {
 	Update(items ...*BucketStoreItem) error
 	// Delete existing items.
 	Delete(items ...*BucketStoreItem) error
-	// TakeOldest pops up to a given limit of the items in the Store
-	// with the oldest AccessTime. The number of returned items may
-	// be less than the given limit, if the Store has no more items.
-	TakeOldest(bucket string, limit int) ([]*BucketStoreItem, error)
+	// TakeOldest pops 0 or more items from the Store with the oldest AccessTime, up to a max total size.
+	TakeOldest(bucket string, totalSize int) ([]*BucketStoreItem, error)
 	// Close the store and free related resources.
 	Close()
 }
@@ -57,7 +55,7 @@ func NewConsoleBucketStore() *ConsoleBucketStore {
 
 func (s *ConsoleBucketStore) Count(_ string) (int, error) { return 0, nil }
 
-func (s *ConsoleBucketStore) Get(bucket, key string) (*BucketStoreItem, error) { return nil, nil }
+func (s *ConsoleBucketStore) Get(_, _ string) (*BucketStoreItem, error) { return nil, nil }
 
 func (s *ConsoleBucketStore) Set(items ...*BucketStoreItem) error { return s.log(items...) }
 
@@ -67,7 +65,7 @@ func (s *ConsoleBucketStore) Update(items ...*BucketStoreItem) error { return s.
 
 func (s *ConsoleBucketStore) Delete(items ...*BucketStoreItem) error { return s.log(items...) }
 
-func (s *ConsoleBucketStore) TakeOldest(bucket string, limit int) ([]*BucketStoreItem, error) {
+func (s *ConsoleBucketStore) TakeOldest(_ string, _ int) ([]*BucketStoreItem, error) {
 	return nil, nil
 }
 

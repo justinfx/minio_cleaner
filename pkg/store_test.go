@@ -247,14 +247,18 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 		bucket := "some"
 		t1 := time.Now()
 		items := []*BucketStoreItem{
-			// Oldest 1
-			&BucketStoreItem{Bucket: bucket, Key: "item1", AccessTime: t1},
-			// Most recent
-			&BucketStoreItem{Bucket: bucket, Key: "item2", AccessTime: t1.Add(1 * time.Hour)},
-			// Oldest 2
-			&BucketStoreItem{Bucket: bucket, Key: "item3", AccessTime: t1.Add(-1 * time.Hour)},
-			// Oldest 3
-			&BucketStoreItem{Bucket: bucket, Key: "item4", AccessTime: t1.Add(1 * time.Minute)},
+			// By Age - 3
+			&BucketStoreItem{Bucket: bucket, Key: "item1",
+				AccessTime: t1, Size: 2},
+			// By Age - 4
+			&BucketStoreItem{Bucket: bucket, Key: "item2",
+				AccessTime: t1.Add(1 * time.Hour), Size: 4},
+			// By Age - 1
+			&BucketStoreItem{Bucket: bucket, Key: "item3",
+				AccessTime: t1.Add(-1 * time.Hour), Size: 6},
+			// By Age - 2
+			&BucketStoreItem{Bucket: bucket, Key: "item4",
+				AccessTime: t1.Add(1 * time.Minute), Size: 10},
 		}
 		require.NoError(t, store.Set(items...))
 
@@ -262,7 +266,8 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, len(items), n)
 
-		actual, err := store.TakeOldest(bucket, 3)
+		maxSize := 20
+		actual, err := store.TakeOldest(bucket, maxSize)
 		require.NoError(t, err)
 		require.Len(t, actual, 3)
 		sort.Slice(actual, func(i, j int) bool {
@@ -279,11 +284,16 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		bucket := "all"
 		t1 := time.Now()
+		size := 5
 		items := []*BucketStoreItem{
-			&BucketStoreItem{Bucket: bucket, Key: "item1", AccessTime: t1},
-			&BucketStoreItem{Bucket: bucket, Key: "item2", AccessTime: t1.Add(1 * time.Hour)},
-			&BucketStoreItem{Bucket: bucket, Key: "item3", AccessTime: t1.Add(-1 * time.Hour)},
-			&BucketStoreItem{Bucket: bucket, Key: "item4", AccessTime: t1.Add(1 * time.Minute)},
+			&BucketStoreItem{Bucket: bucket, Key: "item1",
+				AccessTime: t1, Size: size},
+			&BucketStoreItem{Bucket: bucket, Key: "item2",
+				AccessTime: t1.Add(1 * time.Hour), Size: size},
+			&BucketStoreItem{Bucket: bucket, Key: "item3",
+				AccessTime: t1.Add(-1 * time.Hour), Size: size},
+			&BucketStoreItem{Bucket: bucket, Key: "item4",
+				AccessTime: t1.Add(1 * time.Minute), Size: size},
 		}
 		require.NoError(t, store.Set(items...))
 
@@ -291,7 +301,7 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, len(items), n)
 
-		actual, err := store.TakeOldest(bucket, len(items)*2)
+		actual, err := store.TakeOldest(bucket, size*len(items)+1)
 		require.NoError(t, err)
 		require.Len(t, actual, len(items))
 
