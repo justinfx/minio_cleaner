@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"log/slog"
 	"os"
@@ -23,13 +24,25 @@ func main() {
 
 	opts := nats.GetDefaultOptions()
 
-	// TODO: from flags
+	// flags
+	natsStreamFlag := flag.String("nats-stream", "MINIO", "Nats stream name.")
+	natsDurableFlag := flag.String("nats-durable", "minio-bucket-consumer", "Nats durable name")
+	dbPathFlag := flag.String("db-path", "minio_cleaner.sqlite", "Db path")
+
+	flag.Parse()
+
 	level.Set(slog.LevelDebug)
 	opts.Servers = []string{"nats://127.0.0.1:4222"}
-	stream := "MINIO"
-	durable := "minio-bucket-consumer"
+
+	stream := *natsStreamFlag
+	//stream := "MINIO"
+
+	durable := *natsDurableFlag
+	//durable := "minio-bucket-consumer"
+
+	dbpath := *dbPathFlag
 	//dbpath := "minio_cleaner.sqlite"
-	dbpath := pkg.SQLiteInMemory
+	//dbpath := pkg.SQLiteInMemory
 	setFromStat := true
 
 	consumer := jetstream.ConsumerConfig{
