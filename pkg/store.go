@@ -39,9 +39,17 @@ type BucketStore interface {
 	Delete(items ...*BucketStoreItem) error
 	// TakeOldest pops 0 or more items from the Store with the oldest AccessTime, up to a max total size.
 	TakeOldest(bucket string, totalSize int) ([]*BucketStoreItem, error)
+	// LastClusterUpdate returns the timestamp that the last cluster data info was updated.
+	// If SetLastClusterUpdate has not yet been called, returns a time with zero value and nil error.
+	LastClusterUpdate() (time.Time, error)
+	// SetLastClusterUpdate sets the timestamp of the last time the cluster data info was updated
+	SetLastClusterUpdate(time.Time) error
+
 	// Close the store and free related resources.
 	Close()
 }
+
+var _ BucketStore = &ConsoleBucketStore{}
 
 // ConsoleBucketStore is a store type used for debugging, which prints each event
 // to the console stdout
@@ -67,6 +75,13 @@ func (s *ConsoleBucketStore) Delete(items ...*BucketStoreItem) error { return s.
 
 func (s *ConsoleBucketStore) TakeOldest(_ string, _ int) ([]*BucketStoreItem, error) {
 	return nil, nil
+}
+
+func (s *ConsoleBucketStore) LastClusterUpdate() (time.Time, error) { return time.Now(), nil }
+
+func (s *ConsoleBucketStore) SetLastClusterUpdate(t time.Time) error {
+	fmt.Printf("last update: %s\n", t)
+	return nil
 }
 
 func (s *ConsoleBucketStore) log(items ...*BucketStoreItem) error {

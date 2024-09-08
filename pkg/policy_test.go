@@ -64,7 +64,7 @@ func TestMinioManager_clusterStats(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	manager := NewTestMinioManager(t, "bucket")
-	usage, err := manager.clusterStats(ctx, false)
+	usage, err := manager.clusterStats(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	assert.Equal(t, usage.TotalCapacity, usage.TotalFreeCapacity)
@@ -81,11 +81,7 @@ func TestMinioManager_clusterStats(t *testing.T) {
 		return *usage, nil
 	}
 
-	usage, err = manager.clusterStats(ctx, true)
-	require.NoError(t, err)
-	assert.Equal(t, usage.TotalCapacity, usage.TotalFreeCapacity)
-
-	usage, err = manager.clusterStats(ctx, false)
+	usage, err = manager.clusterStats(ctx)
 	t.Log(usage.BucketsUsage)
 	require.NoError(t, err)
 	assert.Equal(t, data.Size(), int64(usage.TotalUsedCapacity))

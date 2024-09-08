@@ -20,8 +20,8 @@ func init() {
 func newTestStore(t *testing.T) BucketStore {
 	t.Helper()
 	store, err := NewSQLiteBucketStore("")
-	store.db.SetMaxOpenConns(1)
 	require.NoError(t, err)
+	store.db.SetMaxOpenConns(1)
 	t.Cleanup(store.Close)
 	return store
 }
@@ -309,6 +309,35 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, n)
 	})
+}
+
+func TestBucketStore_LastClusterUpdate(t *testing.T) {
+	store := newTestStore(t)
+
+	// test empty
+	actual, err := store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.True(t, actual.IsZero())
+
+	// first update
+	ts := time.Now()
+	require.NoError(t, store.SetLastClusterUpdate(ts))
+	actual, err = store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.WithinDuration(t, ts, actual, 0)
+
+	// set the same time again
+	require.NoError(t, store.SetLastClusterUpdate(ts))
+	actual, err = store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.WithinDuration(t, ts, actual, 0)
+
+	// update with a new time
+	ts = time.Now().Add(1 * time.Minute)
+	require.NoError(t, store.SetLastClusterUpdate(ts))
+	actual, err = store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.WithinDuration(t, ts, actual, 0)
 }
 
 type MockStore struct {
