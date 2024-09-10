@@ -3,7 +3,6 @@ package pkg
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"sync"
 	"testing"
@@ -13,10 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func init() {
-	slog.SetLogLoggerLevel(slog.LevelWarn)
-}
 
 func newTestStore(t *testing.T) BucketStore {
 	t.Helper()

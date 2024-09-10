@@ -1,7 +1,10 @@
 package pkg
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -22,6 +25,9 @@ func TestMain(m *testing.M) {
 
 	// disable the minio cli from exiting on errors
 	mcli.OsExiter = func(exitCode int) {}
+
+	slog.SetLogLoggerLevel(slog.LevelError)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	exitCode := m.Run()
 
@@ -138,4 +144,21 @@ func NewTestMinioManager(t *testing.T, buckets ...string) *MinioManager {
 		require.NoError(t, manager.mclient.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}))
 	}
 	return manager
+}
+
+func PutObject(t *testing.T, manager *MinioManager, bucket, key string, size int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	data := bytes.NewReader(bytes.Repeat([]byte(`x`), int(size)))
+	_, err := manager.mclient.PutObject(ctx, bucket, key,
+		data, data.Size(), minio.PutObjectOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, manager.store.Set(&BucketStoreItem{
+		Bucket:     bucket,
+		Key:        key,
+		AccessTime: time.Now(),
+		Size:       int(size),
+	}))
 }
