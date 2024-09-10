@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -130,6 +131,11 @@ func StoreEvents(ctx context.Context, events <-chan *BucketEvent, store BucketSt
 				Key:        rec.S3.Object.Key,
 				AccessTime: rec.EventTime,
 				Size:       rec.S3.Object.Size,
+			}
+
+			// S3 Object name is url-encoded
+			if key, err := url.PathUnescape(item.Key); err == nil {
+				item.Key = key
 			}
 
 			// route item to the right action
