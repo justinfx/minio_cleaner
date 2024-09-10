@@ -26,6 +26,8 @@ type BucketStore interface {
 	// Count the number of items in a given bucket.
 	// If bucket string is empty, count across all buckets.
 	Count(bucket string) (int, error)
+	// Size returns the total number of bytes for each object in the bucket.
+	Size(bucket string) (int, error)
 	// Get an item by bucket and key.
 	// If item does not exist, return nil item.
 	// Error is non nil only for problems with Store communication.
@@ -63,6 +65,8 @@ func NewConsoleBucketStore() *ConsoleBucketStore {
 }
 
 func (s *ConsoleBucketStore) Count(_ string) (int, error) { return 0, nil }
+
+func (s *ConsoleBucketStore) Size(_ string) (int, error) { return 0, nil }
 
 func (s *ConsoleBucketStore) Get(_, _ string) (*BucketStoreItem, error) { return nil, nil }
 

@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -44,6 +45,31 @@ func TestBucketStore_Count(t *testing.T) {
 
 	count, err = store.Count("foobucket")
 	require.Equal(t, 0, count)
+}
+
+func TestBucketStore_Size(t *testing.T) {
+	store := newTestStore(t)
+	size, err := store.Size("")
+	require.NoError(t, err)
+	require.Equal(t, 0, size)
+
+	require.NoError(t, store.Set(&BucketStoreItem{Bucket: "myBucket", Key: "myKey", Size: 0}))
+	size, err = store.Size("")
+	require.Equal(t, 0, size)
+	size, err = store.Size("myBucket")
+	require.Equal(t, 0, size)
+
+	require.NoError(t, store.Set(&BucketStoreItem{Bucket: "myBucket", Key: "myKey1", Size: 5}))
+	size, err = store.Size("myBucket")
+	require.Equal(t, 5, size)
+
+	N := 5
+	for i := range N {
+		key := fmt.Sprintf("newKey%d", i)
+		require.NoError(t, store.Set(&BucketStoreItem{Bucket: "myBucket", Key: key, Size: 5}))
+	}
+	size, err = store.Size("myBucket")
+	require.Equal(t, N*5+5, size)
 }
 
 func TestBucketStore_Get(t *testing.T) {

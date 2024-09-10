@@ -104,6 +104,15 @@ func (s *SQLiteBucketStore) Count(bucket string) (int, error) {
 	return count, nil
 }
 
+func (s *SQLiteBucketStore) Size(bucket string) (int, error) {
+	const query = `SELECT COALESCE(SUM(size), 0) as total FROM bucket_events WHERE bucket = ?;`
+	var size int
+	if err := s.db.QueryRow(query, bucket).Scan(&size); err != nil {
+		return 0, fmt.Errorf("failed to get total byte size of bucket events: %w", err)
+	}
+	return size, nil
+}
+
 func (s *SQLiteBucketStore) Get(bucket, key string) (*BucketStoreItem, error) {
 	const query = `
 		SELECT bucket, key, access_time, size FROM bucket_events

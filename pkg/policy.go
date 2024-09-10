@@ -73,6 +73,15 @@ func (p *CleanupPolicy) SetTargetSize(size string) error {
 	return nil
 }
 
+type bucketSizeMode int
+
+const (
+	// size of bucket is read as a total from objects in database
+	bucketSizeModeDB bucketSizeMode = 0
+	// size of bucket is read from Minio cluster disk stats
+	bucketSizeModeS3 bucketSizeMode = 1
+)
+
 // MinioManager defines credentials to connect to a Minio cluster endpoint,
 // and a collection of cleanup policies to execute at a defined interval.
 type MinioManager struct {
@@ -86,13 +95,15 @@ type MinioManager struct {
 	// A hook used for testing, to perform an alternate implementation
 	// of fetching the Minio cluster usage details
 	minioUsageFn func(context.Context) (madmin.DataUsageInfo, error)
+
+	bucketSizeMode bucketSizeMode
 }
 
 // NewMinioManager creates a MinioManager using a configuration of credentials,
 // and a BucketStore to read object access times and sizes.
 // Manager does not take ownership of calling BucketStore.Close()
 func NewMinioManager(cfg *MinioConfig, store BucketStore) *MinioManager {
-	return &MinioManager{cfg: cfg, store: store}
+	return &MinioManager{cfg: cfg, store: store, bucketSizeMode: bucketSizeModeDB}
 }
 
 // initClients sets up the minio client and admin interfaces.
@@ -155,6 +166,8 @@ func (m *MinioManager) Run(ctx context.Context) error {
 	}
 }
 
+type bucketSizeFn func(bucket string) (size int, err error)
+
 // runOnce will run one iteration of the bucket policies.
 // Bucket policies are executed in order.
 // Errors from any of the policy executes will be aggregated into a single
@@ -169,27 +182,55 @@ func (m *MinioManager) runOnce(ctx context.Context) error {
 		return err
 	}
 
-	// Minio has a delayed update for its disk usage, via its async scanner.
-	// So we need to track the timestamp of the stats and not process the
-	// policies again until we have a stats update that has changed.
-	stats, err := m.clusterStats(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to query minio cluster stats: %w", err)
-	}
-	lastUpdate, err := m.store.LastClusterUpdate()
-	if err != nil {
-		return err
-	}
-	if !lastUpdate.IsZero() && !stats.LastUpdate.After(lastUpdate) {
-		slog.Info("Minio cluster storage info has not updated since last run",
-			"last_update", lastUpdate)
-		return nil
-	}
-
 	var (
 		errs         error
 		totalRemoved int
 	)
+
+	var bucketSizer bucketSizeFn
+
+	switch m.bucketSizeMode {
+
+	case bucketSizeModeDB:
+		bucketSizer = func(bucket string) (int, error) {
+			return m.store.Size(bucket)
+		}
+
+	case bucketSizeModeS3:
+		// Minio has a delayed update for its disk usage, via its async scanner.
+		// So we need to track the timestamp of the stats and not process the
+		// policies again until we have a stats update that has changed.
+		stats, err := m.clusterStats(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to query minio cluster stats: %w", err)
+		}
+		lastUpdate, err := m.store.LastClusterUpdate()
+		if err != nil {
+			return err
+		}
+		if !lastUpdate.IsZero() && !stats.LastUpdate.After(lastUpdate) {
+			slog.Info("Minio cluster storage info has not updated since last run",
+				"last_update", lastUpdate)
+			return nil
+		}
+		bucketSizer = func(bucket string) (int, error) {
+			return int(stats.BucketsUsage[bucket].Size), nil
+		}
+		defer func() {
+			// If we removed at least one object, mark this timestamp to prevent the policies
+			// from running again until we get new Minio stats.
+			if totalRemoved > 0 {
+				slog.Info("Updating last cluster stat timestamp", "last_update", stats.LastUpdate)
+				if err := m.store.SetLastClusterUpdate(stats.LastUpdate); err != nil {
+					slog.Error("Failed to set the last cluster update", "err", err)
+					errs = multierror.Append(errs,
+						fmt.Errorf("failed to set last cluster update: %w", err))
+				}
+			}
+		}()
+
+	}
+
 	for i, policy := range m.cfg.BucketPolicies {
 		if ctx.Err() != nil {
 			break //cancellation
@@ -201,7 +242,7 @@ func (m *MinioManager) runOnce(ctx context.Context) error {
 		}
 
 		slog.Info("Running bucket policy", "idx", i, "bucket", policy.Bucket)
-		removed, err := m.runBucketPolicy(ctx, policy)
+		removed, err := m.runBucketPolicy(ctx, policy, bucketSizer)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				break
@@ -213,23 +254,13 @@ func (m *MinioManager) runOnce(ctx context.Context) error {
 		totalRemoved += removed
 	}
 
-	// If we removed at least one object, mark this timestamp to prevent the policies
-	// from running again until we get new Minio stats.
-	if totalRemoved > 0 {
-		if err := m.store.SetLastClusterUpdate(stats.LastUpdate); err != nil {
-			slog.Error("Failed to set the last cluster update", "err", err)
-			errs = multierror.Append(errs,
-				fmt.Errorf("failed to set last cluster update: %w", err))
-		}
-	}
-
 	return errs
 }
 
 // runBucketPolicy runs one execution of the bucket policy, and returns the number of
 // objects that have been removed.
 // If the policy is nil, this call does nothing.
-func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolicy) (int, error) {
+func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolicy, sizeFn bucketSizeFn) (int, error) {
 	if policy == nil {
 		return 0, nil
 	}
@@ -237,25 +268,17 @@ func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolic
 		return 0, fmt.Errorf("bucket policy does not define bucket name")
 	}
 
-	stats, err := m.clusterStats(ctx)
+	bucketSize, err := sizeFn(policy.Bucket)
 	if err != nil {
-		return 0, fmt.Errorf("failed to query minio cluster stats: %w", err)
+		return 0, err
 	}
 
-	bucketUsage, ok := stats.BucketsUsage[policy.Bucket]
-	if !ok {
-		// bucket does not exist
-		slog.Info("Cleanup: Bucket does not exist for defined policy", "bucket", policy.Bucket)
-		return 0, nil
-	}
-
-	currentSize := bucketUsage.Size
-	bytesToRemove := int(currentSize) - int(policy.TargetSize)
+	bytesToRemove := bucketSize - int(policy.TargetSize)
 	if bytesToRemove <= 0 {
 		slog.Info("Cleanup: Bucket usage is under policy target size",
 			"bucket", policy.Bucket,
-			"size", humanize.Bytes(currentSize),
-			"targetSize", humanize.Bytes(policy.TargetSize))
+			"current_size", humanize.IBytes(uint64(bucketSize)),
+			"target_size", humanize.IBytes(policy.TargetSize))
 		return 0, nil
 	}
 
@@ -264,7 +287,13 @@ func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolic
 		return 0, fmt.Errorf("cleanup failed to take store items (maxsize: %d): %w", bytesToRemove, err)
 	}
 
-	slog.Info("Cleanup: processing objects for removal", "bucket", policy.Bucket, "count", len(items))
+	slog.Info("Cleanup: processing objects for removal",
+		"bucket", policy.Bucket,
+		"to_remove", len(items),
+		"current_size", humanize.IBytes(uint64(bucketSize)),
+		"max_removal_size", humanize.IBytes(uint64(bytesToRemove)),
+		"target_size", humanize.IBytes(policy.TargetSize))
+
 	removals := make(chan mclient.ObjectInfo, len(items))
 	go func() {
 		defer close(removals)
