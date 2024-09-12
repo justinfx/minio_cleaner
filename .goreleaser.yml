@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
 builds:
   - id: minio_cleaner
     main: .
@@ -9,6 +11,8 @@ builds:
       - linux
     ignore:
       - goos: darwin
+        goarch: "386"
+      - goos: windows
         goarch: "386"
 
 archives:
