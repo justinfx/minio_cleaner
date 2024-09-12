@@ -1,0 +1,58 @@
+builds:
+  - id: minio_cleaner
+    main: .
+    binary: minio_cleaner
+    ldflags: -s -w -X main.Version={{.Version}}
+    goos:
+      - windows
+      - darwin
+      - linux
+    ignore:
+      - goos: darwin
+        goarch: "386"
+
+archives:
+  - id: default
+    wrap_in_directory: true
+    name_template: >-
+      {{ .ProjectName }}_
+      {{ .Version }}_
+      {{- tolower .Os }}_
+      {{- if eq .Arch "amd64" }}64-bit
+      {{- else if eq .Arch "386" }}32-bit
+      {{- else if eq .Arch "darwin" }}osx
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+release:
+  github:
+    owner: justinfx
+    name: minio_cleaner
+  draft: true
+  # You can change the name of the GitHub release.
+  # This is parsed with the Go template engine and the following variables
+  # are available:
+  # - ProjectName
+  # - Tag
+  # - Version (Git tag without `v` prefix)
+  # Default is ``
+  name_template: "v{{.Version}} Release"
+
+changelog:
+  filters:
+    # commit messages matching the regexp listed here will be removed from
+    # the changelog
+    # Default is empty
+    exclude:
+      - '^docs:'
+      - typo
+      - goreleaser
+      - gitignore
+      - '[tT]ravis'
+      - '^ci:'
+      - '^merge:'
