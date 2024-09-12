@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -25,6 +26,8 @@ type BucketStore interface {
 	// Count the number of items in a given bucket.
 	// If bucket string is empty, count across all buckets.
 	Count(bucket string) (int, error)
+	// Size returns the total number of bytes for each object in the bucket.
+	Size(bucket string) (int, error)
 	// Get an item by bucket and key.
 	// If item does not exist, return nil item.
 	// Error is non nil only for problems with Store communication.
@@ -39,9 +42,17 @@ type BucketStore interface {
 	Delete(items ...*BucketStoreItem) error
 	// TakeOldest pops 0 or more items from the Store with the oldest AccessTime, up to a max total size.
 	TakeOldest(bucket string, totalSize int) ([]*BucketStoreItem, error)
+	// LastClusterUpdate returns the timestamp that the last cluster data info was updated.
+	// If SetLastClusterUpdate has not yet been called, returns a time with zero value and nil error.
+	LastClusterUpdate() (time.Time, error)
+	// SetLastClusterUpdate sets the timestamp of the last time the cluster data info was updated
+	SetLastClusterUpdate(time.Time) error
+
 	// Close the store and free related resources.
 	Close()
 }
+
+var _ BucketStore = &ConsoleBucketStore{}
 
 // ConsoleBucketStore is a store type used for debugging, which prints each event
 // to the console stdout
@@ -55,6 +66,8 @@ func NewConsoleBucketStore() *ConsoleBucketStore {
 
 func (s *ConsoleBucketStore) Count(_ string) (int, error) { return 0, nil }
 
+func (s *ConsoleBucketStore) Size(_ string) (int, error) { return 0, nil }
+
 func (s *ConsoleBucketStore) Get(_, _ string) (*BucketStoreItem, error) { return nil, nil }
 
 func (s *ConsoleBucketStore) Set(items ...*BucketStoreItem) error { return s.log(items...) }
@@ -67,6 +80,13 @@ func (s *ConsoleBucketStore) Delete(items ...*BucketStoreItem) error { return s.
 
 func (s *ConsoleBucketStore) TakeOldest(_ string, _ int) ([]*BucketStoreItem, error) {
 	return nil, nil
+}
+
+func (s *ConsoleBucketStore) LastClusterUpdate() (time.Time, error) { return time.Now(), nil }
+
+func (s *ConsoleBucketStore) SetLastClusterUpdate(t time.Time) error {
+	fmt.Printf("last update: %s\n", t)
+	return nil
 }
 
 func (s *ConsoleBucketStore) log(items ...*BucketStoreItem) error {
@@ -115,6 +135,11 @@ func StoreEvents(ctx context.Context, events <-chan *BucketEvent, store BucketSt
 				Key:        rec.S3.Object.Key,
 				AccessTime: rec.EventTime,
 				Size:       rec.S3.Object.Size,
+			}
+
+			// S3 Object name is url-encoded
+			if key, err := url.PathUnescape(item.Key); err == nil {
+				item.Key = key
 			}
 
 			// route item to the right action

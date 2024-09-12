@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -35,6 +36,12 @@ func NewSQLiteBucketStore(dbpath string) (*SQLiteBucketStore, error) {
 
 		CREATE INDEX IF NOT EXISTS idx_bucket_access_time
 			ON bucket_events (bucket, access_time);
+
+		CREATE TABLE IF NOT EXISTS cluster_updates (
+		    idx INTEGER,
+		    timestamp TIMESTAMP NOT NULL,
+		    PRIMARY KEY(idx)
+		)
 	`
 
 	if dbpath == "" {
@@ -95,6 +102,15 @@ func (s *SQLiteBucketStore) Count(bucket string) (int, error) {
 		return 0, fmt.Errorf("failed to count bucket events: %w", err)
 	}
 	return count, nil
+}
+
+func (s *SQLiteBucketStore) Size(bucket string) (int, error) {
+	const query = `SELECT COALESCE(SUM(size), 0) as total FROM bucket_events WHERE bucket = ?;`
+	var size int
+	if err := s.db.QueryRow(query, bucket).Scan(&size); err != nil {
+		return 0, fmt.Errorf("failed to get total byte size of bucket events: %w", err)
+	}
+	return size, nil
 }
 
 func (s *SQLiteBucketStore) Get(bucket, key string) (*BucketStoreItem, error) {
@@ -262,4 +278,27 @@ func (s *SQLiteBucketStore) TakeOldest(bucket string, totalSize int) ([]*BucketS
 		ret = append(ret, &item)
 	}
 	return ret, nil
+}
+
+func (s *SQLiteBucketStore) LastClusterUpdate() (time.Time, error) {
+	const query = `SELECT timestamp FROM cluster_updates LIMIT 1`
+	var last_update time.Time
+	if err := s.db.QueryRow(query).Scan(&last_update); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return last_update, nil
+		}
+		return last_update, fmt.Errorf("failed to query last cluster update time: %w", err)
+	}
+	return last_update, nil
+}
+
+func (s *SQLiteBucketStore) SetLastClusterUpdate(t time.Time) error {
+	const query = `
+		INSERT INTO cluster_updates (idx, timestamp) VALUES (1, ?) 
+		ON CONFLICT DO UPDATE SET timestamp=EXCLUDED.timestamp;
+	`
+	if _, err := s.db.Exec(query, t); err != nil {
+		return fmt.Errorf("failed to set last cluster update time: %w", err)
+	}
+	return nil
 }

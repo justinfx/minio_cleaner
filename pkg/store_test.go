@@ -2,7 +2,7 @@ package pkg
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"sort"
 	"sync"
 	"testing"
@@ -13,15 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	slog.SetLogLoggerLevel(slog.LevelWarn)
-}
-
 func newTestStore(t *testing.T) BucketStore {
 	t.Helper()
 	store, err := NewSQLiteBucketStore("")
-	store.db.SetMaxOpenConns(1)
 	require.NoError(t, err)
+	store.db.SetMaxOpenConns(1)
 	t.Cleanup(store.Close)
 	return store
 }
@@ -44,6 +40,31 @@ func TestBucketStore_Count(t *testing.T) {
 
 	count, err = store.Count("foobucket")
 	require.Equal(t, 0, count)
+}
+
+func TestBucketStore_Size(t *testing.T) {
+	store := newTestStore(t)
+	size, err := store.Size("")
+	require.NoError(t, err)
+	require.Equal(t, 0, size)
+
+	require.NoError(t, store.Set(&BucketStoreItem{Bucket: "myBucket", Key: "myKey", Size: 0}))
+	size, err = store.Size("")
+	require.Equal(t, 0, size)
+	size, err = store.Size("myBucket")
+	require.Equal(t, 0, size)
+
+	require.NoError(t, store.Set(&BucketStoreItem{Bucket: "myBucket", Key: "myKey1", Size: 5}))
+	size, err = store.Size("myBucket")
+	require.Equal(t, 5, size)
+
+	N := 5
+	for i := range N {
+		key := fmt.Sprintf("newKey%d", i)
+		require.NoError(t, store.Set(&BucketStoreItem{Bucket: "myBucket", Key: key, Size: 5}))
+	}
+	size, err = store.Size("myBucket")
+	require.Equal(t, N*5+5, size)
 }
 
 func TestBucketStore_Get(t *testing.T) {
@@ -309,6 +330,35 @@ func TestBucketStore_TakeOldest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, n)
 	})
+}
+
+func TestBucketStore_LastClusterUpdate(t *testing.T) {
+	store := newTestStore(t)
+
+	// test empty
+	actual, err := store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.True(t, actual.IsZero())
+
+	// first update
+	ts := time.Now()
+	require.NoError(t, store.SetLastClusterUpdate(ts))
+	actual, err = store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.WithinDuration(t, ts, actual, 0)
+
+	// set the same time again
+	require.NoError(t, store.SetLastClusterUpdate(ts))
+	actual, err = store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.WithinDuration(t, ts, actual, 0)
+
+	// update with a new time
+	ts = time.Now().Add(1 * time.Minute)
+	require.NoError(t, store.SetLastClusterUpdate(ts))
+	actual, err = store.LastClusterUpdate()
+	require.NoError(t, err)
+	require.WithinDuration(t, ts, actual, 0)
 }
 
 type MockStore struct {

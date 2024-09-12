@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -10,8 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/justinfx/minio_cleaner/pkg"
 )
@@ -31,24 +34,31 @@ func main() {
 
 	flag.Parse()
 
-	level.Set(slog.LevelDebug)
-	opts.Servers = []string{"nats://127.0.0.1:4222"}
-
 	stream := *natsStreamFlag
-	//stream := "MINIO"
-
 	durable := *natsDurableFlag
-	//durable := "minio-bucket-consumer"
-
 	dbpath := *dbPathFlag
-	//dbpath := "minio_cleaner.sqlite"
-	//dbpath := pkg.SQLiteInMemory
-	setFromStat := true
+
+	// TODO: from flags
+	level.Set(slog.LevelInfo)
+	opts.Servers = []string{"nats://127.0.0.1:4222"}
+	setObjectFromStat := true
 
 	consumer := jetstream.ConsumerConfig{
-		Name:              durable,
-		Durable:           durable,
+		Name:    durable,
+		Durable: durable,
+		// TODO: from flags?
 		InactiveThreshold: 1 * time.Hour,
+	}
+
+	// TODO: from flags/config
+	minioCfg := &pkg.MinioConfig{
+		Endpoint:      "localhost:9000",
+		AccessKey:     "minioadmin",
+		SecretKey:     "minioadmin",
+		CheckInterval: 10 * time.Second,
+		BucketPolicies: []*pkg.CleanupPolicy{
+			&pkg.CleanupPolicy{Bucket: "testbucket", TargetSize: 500 * humanize.MiByte},
+		},
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -56,56 +66,45 @@ func main() {
 
 	evts := make(chan *pkg.BucketEvent)
 
-	var (
-		store pkg.BucketStore
-		err   error
-	)
-
 	receiver := pkg.NewNatsReceiver(opts, stream, consumer)
-	receiver.SetFromStat = setFromStat
+	receiver.SetFromStat = setObjectFromStat
 
-	//store = pkg.NewConsoleBucketStore()
-	store, err = pkg.NewSQLiteBucketStore(dbpath)
+	store, err := pkg.NewSQLiteBucketStore(dbpath)
 	if err != nil {
 		slog.Error("Failed to initialize bucket event store", "error", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
-	go func() {
+	manager := pkg.NewMinioManager(minioCfg, store)
+
+	var grp errgroup.Group
+
+	grp.Go(func() error {
 		if err := pkg.StoreEvents(ctx, evts, store); err != nil {
-			slog.Error("BucketEvent store Receive failed", "error", err)
 			cancel()
+			return fmt.Errorf("BucketEvent store Receive failed: %w", err)
 		}
-	}()
+		return nil
+	})
 
-	// TODO: Cleanup policy manager
-	//go func() {
-	//	tk := time.NewTicker(5 * time.Second)
-	//	defer tk.Stop()
-	//	for ctx.Err() == nil {
-	//		select {
-	//		case <-tk.C:
-	//			// pass
-	//		case <-ctx.Done():
-	//			return
-	//		}
-	//
-	//		ret, err := store.TakeOldest("testbucket", 3)
-	//		if err != nil {
-	//			slog.Error("BucketEvent TakeOldest failed", "error", err)
-	//			continue
-	//		}
-	//		slog.Debug("BucketEvent TakeOldest returned top 3:")
-	//		for i, b := range ret {
-	//			fmt.Fprintf(os.Stderr, "  %d: %+v\n", i, b)
-	//		}
-	//	}
-	//}()
-	// END DEBUG
+	grp.Go(func() error {
+		if err := receiver.Listen(ctx, evts); err != nil {
+			cancel()
+			return fmt.Errorf("Nats receiver failed: %w", err)
+		}
+		return nil
+	})
 
-	err = receiver.Listen(ctx, evts)
-	if err != nil {
+	grp.Go(func() error {
+		if err := manager.Run(ctx); err != nil {
+			cancel()
+			return fmt.Errorf("MinioManager failed: %w", err)
+		}
+		return nil
+	})
+
+	if err := grp.Wait(); err != nil {
 		log.Fatal(err)
 	}
 }
