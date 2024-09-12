@@ -124,7 +124,7 @@ func StoreEvents(ctx context.Context, events <-chan *BucketEvent, store BucketSt
 			}
 
 			if err = evt.Check(); err != nil {
-				slog.Warn("skipping bad event item: %w", err)
+				slog.Warn("skipping bad event item", "error", err)
 				continue
 			}
 
