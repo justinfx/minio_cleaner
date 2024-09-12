@@ -10,6 +10,15 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+type StoreConfig struct {
+	Path      string `toml:"db_path"`
+	EnableWAL bool   `toml:"enable_wal"`
+}
+
+func (c *StoreConfig) Validate() error {
+	return nil
+}
+
 // SQLiteInMemory defines a dbpath that is stored in-memory
 const SQLiteInMemory = "file::memory:"
 
@@ -21,10 +30,10 @@ type SQLiteBucketStore struct {
 
 var _ BucketStore = &SQLiteBucketStore{}
 
-// NewSQLiteBucketStore opens the sqlite database named by dbpath,
+// NewSQLiteBucketStore opens the sqlite database named by config path,
 // and builds the schema as needed.
 // The store should be closed when it is no longer needed.
-func NewSQLiteBucketStore(dbpath string) (*SQLiteBucketStore, error) {
+func NewSQLiteBucketStore(cfg StoreConfig) (*SQLiteBucketStore, error) {
 	const schema = `
 		CREATE TABLE IF NOT EXISTS bucket_events (
 			bucket TEXT NOT NULL,
@@ -44,12 +53,12 @@ func NewSQLiteBucketStore(dbpath string) (*SQLiteBucketStore, error) {
 		)
 	`
 
-	if dbpath == "" {
-		dbpath = SQLiteInMemory
+	if cfg.Path == "" {
+		cfg.Path = SQLiteInMemory
 	}
 
-	slog.Info("Opening sqlite bucket store", "db", dbpath)
-	db, err := sql.Open("sqlite", dbpath)
+	slog.Info("Opening sqlite bucket store", "db", cfg.Path)
+	db, err := sql.Open("sqlite", cfg.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
@@ -61,13 +70,14 @@ func NewSQLiteBucketStore(dbpath string) (*SQLiteBucketStore, error) {
 	if err = st.mustExec("PRAGMA busy_timeout=5000;"); err != nil {
 		return nil, fmt.Errorf("failed to set up sqlite timeout: %w", err)
 	}
-	// TODO: optional? Only if not network mount?
-	if err = st.mustExec("PRAGMA synchronous=NORMAL;"); err != nil {
-		return nil, fmt.Errorf("failed to set up sqlite sync mode: %w", err)
-	}
-	// TODO: optional? Only if not network mount?
-	if err = st.mustExec("PRAGMA journal_mode=WAL;"); err != nil {
-		return nil, fmt.Errorf("failed to set up sqlite journal mode: %w", err)
+
+	if cfg.EnableWAL {
+		if err = st.mustExec("PRAGMA synchronous=NORMAL;"); err != nil {
+			return nil, fmt.Errorf("failed to set up sqlite sync mode: %w", err)
+		}
+		if err = st.mustExec("PRAGMA journal_mode=WAL;"); err != nil {
+			return nil, fmt.Errorf("failed to set up sqlite journal mode: %w", err)
+		}
 	}
 
 	if _, err = db.Exec(schema); err != nil {

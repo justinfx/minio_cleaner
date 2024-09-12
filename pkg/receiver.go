@@ -6,10 +6,38 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
+
+type NatsConfig struct {
+	Servers           []string       `toml:"servers"`
+	Stream            string         `toml:"stream"`
+	Durable           string         `toml:"durable"`
+	Secure            bool           `toml:"secure"`
+	InactiveThreshold time.Duration  `toml:"inactive_threshold"`
+	DeliveryPolicy    DeliveryPolicy `toml:"delivery_policy"`
+	DeliveryStartSeq  uint64         `toml:"delivery_start_seq"`
+	DeliveryStartTime *time.Time     `toml:"delivery_start_time"`
+}
+
+func (c *NatsConfig) Validate() error {
+	if c.Stream == "" {
+		return errors.New("stream is required")
+	}
+	return nil
+}
+
+type DeliveryPolicy struct {
+	jetstream.DeliverPolicy
+}
+
+func (p *DeliveryPolicy) UnmarshalText(text []byte) error {
+	jsstring := `"` + string(text) + `"`
+	return p.DeliverPolicy.UnmarshalJSON([]byte(jsstring))
+}
 
 // NatsReceiver consumes Minio Bucket events from a Nats stream
 type NatsReceiver struct {
@@ -17,16 +45,31 @@ type NatsReceiver struct {
 	consumerCfg jetstream.ConsumerConfig
 	stream      string
 
+	// If true, handle object stat (HEAD) requests the same
+	// as set (CREATE). Used for back-filling from object stats.
 	SetFromStat bool
 }
 
 // NewNatsReceiver constructs a NatsReceiver using Nats connection options,
 // an existing stream name, and stream consumer options
-func NewNatsReceiver(connOpts nats.Options, stream string, consumer jetstream.ConsumerConfig) *NatsReceiver {
+func NewNatsReceiver(cfg NatsConfig) *NatsReceiver {
+	connOpts := nats.GetDefaultOptions()
+	connOpts.Servers = cfg.Servers
+	connOpts.Secure = cfg.Secure
+
+	consumer := jetstream.ConsumerConfig{
+		Name:              cfg.Durable,
+		Durable:           cfg.Durable,
+		InactiveThreshold: cfg.InactiveThreshold,
+		DeliverPolicy:     cfg.DeliveryPolicy.DeliverPolicy,
+		OptStartSeq:       cfg.DeliveryStartSeq,
+		OptStartTime:      cfg.DeliveryStartTime,
+	}
+
 	return &NatsReceiver{
 		connOpts:    connOpts,
 		consumerCfg: consumer,
-		stream:      stream,
+		stream:      cfg.Stream,
 	}
 }
 

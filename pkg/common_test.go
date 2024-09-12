@@ -123,7 +123,7 @@ func StartTestMinio(t *testing.T) *MinioConfig {
 }
 
 func StartTestStore(t *testing.T) BucketStore {
-	store, err := NewSQLiteBucketStore(SQLiteInMemory)
+	store, err := NewSQLiteBucketStore(StoreConfig{Path: SQLiteInMemory})
 	require.NoError(t, err)
 	t.Cleanup(store.Close)
 	return store

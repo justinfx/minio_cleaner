@@ -12,6 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDataSize(t *testing.T) {
+	mustNew := func(size string) DataSize {
+		ds, err := NewDataSize(size)
+		require.NoError(t, err)
+		return ds
+	}
+
+	_, err := NewDataSize("")
+	assert.Error(t, err)
+
+	assert.Equal(t, int(0), int(DataSize(0)))
+	assert.Equal(t, int(0), int(mustNew("0")))
+	assert.Equal(t, 10*humanize.Byte, int(mustNew("10")))
+	assert.Equal(t, 100*humanize.MByte, int(mustNew("100MB")))
+	assert.Equal(t, 10*humanize.GiByte, int(mustNew("10 GiB")))
+}
+
 func TestCleanupPolicy_IsValid(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -116,7 +133,7 @@ func TestMinioManager_runOnce(t *testing.T) {
 			objSize:  1,
 			objCount: 10,
 			policies: []*CleanupPolicy{
-				{Bucket: "run-once-2", TargetSize: 0 * humanize.Byte},
+				{Bucket: "run-once-2", TargetSize: 0 * humanize.Byte, AllowRemoveAll: true},
 			},
 			expect: map[string]ExpectBucket{
 				"run-once-2": {count: 0, size: 0 * humanize.Byte},
@@ -142,6 +159,17 @@ func TestMinioManager_runOnce(t *testing.T) {
 			},
 			expect: map[string]ExpectBucket{
 				"run-once-4": {count: 3, size: 3 * (3 * humanize.Byte)},
+			},
+		},
+		{
+			name:     "remove none",
+			objSize:  1,
+			objCount: 10,
+			policies: []*CleanupPolicy{
+				{Bucket: "run-once-5", TargetSize: 0 * humanize.Byte},
+			},
+			expect: map[string]ExpectBucket{
+				"run-once-5": {count: 10, size: 10 * (1 * humanize.Byte)},
 			},
 		},
 	}

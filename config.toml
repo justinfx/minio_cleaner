@@ -1,0 +1,95 @@
+# Logging level: debug, info, warn, error
+log_level = "info"
+
+# Output logging in structured json
+log_json = false
+
+# Catch all Minio stat events (HEAD) and treat them as
+# set operations in the store.
+# This is useful when you want to start up the service
+# in a mode that can be backfilled by running a recursive
+# stat operation in Minio to set objects in the store.
+# Normally you want this disabled so that only object CREATE
+# operations set the new object, and GET operations update
+# the timestamp
+set_from_stat = false
+
+
+[minio]
+endpoint = "localhost:9000"
+access_key = "minioadmin"
+secret_key = "minioadmin"
+# If true, use SSL connection
+secure = false
+
+# How often to execute the policy checks.
+# If set to 0, no policy checks will be performed.
+# https://pkg.go.dev/time#ParseDuration
+check_interval = "10s"
+
+    # One or more bucket policies to define the cleanup checks
+    # to be performed after the check_interval duration.
+    # Minio must be set up externally for the Nats Events Destination
+    # and the bucket needs to have the event assigned.
+    [[minio.policies]]
+    bucket = "testbucket"
+
+    # Target bucket size to achieve when performing cleanups.
+    # If the size is set to 0, then the policy is disabled.
+    # Format: "500 MB", "1GB", "150.5 GiB", ...
+    # https://pkg.go.dev/github.com/dustin/go-humanize
+    target_size = "500 MiB"
+
+    # Must be explicitly defined if you want to set target_size
+    # to 0 and remove all data on each policy execution.
+    allow_remove_all = false
+
+    #[[minio.policies]]
+    #bucket = "my_cache_bucket2"
+    #target_size = "100MB"
+
+
+# Configure Nats JetStream consumer, used to read Minio Notification
+# events, which are then stored for later use in policy execution.
+# The Nats stream must already exist, and the Event Destination must
+# be set up in Minio externally, and assigned to the buckets being
+# defined in the minio.policies list.
+[nats]
+servers = ["nats://127.0.0.1:4222"]
+
+# JetStream stream name
+stream = "MINIO"
+
+# The name of the JetStream consumer to use, for durability.
+# If unset, an ephemeral consumer will be used, which cannot
+# resume positions automatically between process restarts.
+durable = "minio-bucket-consumer"
+
+# If true, use SSL connection
+secure = false
+
+# The duration after which an inactive consumer should be removed.
+inactive_threshold = "1h"
+
+# Consumer delivery policy (defaults to "all").
+# One of: [all, last, new, by_start_sequence, by_start_time, last_per_subject]
+delivery_policy = "all"
+
+# Optional sequence number from which to start message delivery.
+# Only applicable when delivery_policy is set to "by_start_sequence".
+#delivery_start_seq = 1
+
+# Optional time from which to start message delivery.
+# Only applicable when delivery_policy is set to by_start_time.
+# Format is local datetime string:  2006-01-02T15:04:05Z
+#delivery_start_time = "2006-01-02T15:04:05Z"
+
+
+[store]
+# The name of the single database filepath to store.
+# If empty, use an in-memory datbase.
+db_path = "minio_cleaner.sqlite"
+
+# If true, use a write-ahead-log for database performance.
+# Only supported, if db_path is not a network location.
+enable_wal = true

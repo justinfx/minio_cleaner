@@ -16,18 +16,37 @@ import (
 )
 
 type MinioConfig struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Secure    bool
+	Endpoint  string `toml:"endpoint"`
+	AccessKey string `toml:"access_key"`
+	SecretKey string `toml:"secret_key"`
+	Secure    bool   `toml:"secure"`
 
 	// How often the cleanup interval should run.
 	// If the duration is zero, then policies will not be executed.
-	CheckInterval time.Duration
+	CheckInterval time.Duration `toml:"check_interval"`
 
 	// One or more policies with a specific Bucket to clean.
 	// The cleanup operation runs the policies in order.
-	BucketPolicies []*CleanupPolicy
+	BucketPolicies []*CleanupPolicy `toml:"policies"`
+}
+
+func (c *MinioConfig) Validate() error {
+	if c.Endpoint == "" {
+		return errors.New("minio endpoint is required")
+	}
+	if c.AccessKey == "" {
+		return errors.New("minio access key is required")
+	}
+	if c.SecretKey == "" {
+		return errors.New("minio secret key is required")
+	}
+	var err error
+	for i, policy := range c.BucketPolicies {
+		if e := policy.Validate(); e != nil {
+			err = multierror.Append(err, fmt.Errorf("bucket policy[%d] is invalid: %s", i, e.Error()))
+		}
+	}
+	return err
 }
 
 // NewCleanupPolicy creates a new policy for a target bucket, and
@@ -45,10 +64,21 @@ func NewCleanupPolicy(bucket, targetSize string) (*CleanupPolicy, error) {
 
 // CleanupPolicy defines a policy for a single bucket.
 type CleanupPolicy struct {
-	Bucket string
+	Bucket string `toml:"bucket"`
 	// Target size in bytes of the Minio storage minioUsage, used to trigger cleanups.
 	// If the target size is 0, then the policy will not be executed.
-	TargetSize uint64
+	TargetSize DataSize `toml:"target_size"`
+	// Must be explicitly set to true if you want to set target_size
+	// to 0 and remove all data on each policy execution.
+	AllowRemoveAll bool `toml:"allow_remove_all"`
+}
+
+// Validate returns an error if the policy is not defined correctly.
+func (p *CleanupPolicy) Validate() error {
+	if p.Bucket == "" {
+		return errors.New("bucket name is required")
+	}
+	return nil
 }
 
 // IsValid returns whether the policy is valid and should be executed
@@ -56,7 +86,7 @@ func (p *CleanupPolicy) IsValid() bool {
 	if p.Bucket == "" {
 		return false
 	}
-	if p.TargetSize == 0 {
+	if p.TargetSize == 0 && !p.AllowRemoveAll {
 		return false
 	}
 	return true
@@ -65,12 +95,7 @@ func (p *CleanupPolicy) IsValid() bool {
 // SetTargetSize sets the target minio cluster size from a
 // string, such as "200G" or "5000 MB"
 func (p *CleanupPolicy) SetTargetSize(size string) error {
-	bsize, err := humanize.ParseBytes(size)
-	if err != nil {
-		return err
-	}
-	p.TargetSize = bsize
-	return nil
+	return p.TargetSize.SetFromString(size)
 }
 
 type bucketSizeMode int
@@ -267,6 +292,9 @@ func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolic
 	if policy.Bucket == "" {
 		return 0, fmt.Errorf("bucket policy does not define bucket name")
 	}
+	if !policy.IsValid() {
+		return 0, nil
+	}
 
 	bucketSize, err := sizeFn(policy.Bucket)
 	if err != nil {
@@ -278,7 +306,7 @@ func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolic
 		slog.Info("Cleanup: Bucket usage is under policy target size",
 			"bucket", policy.Bucket,
 			"current_size", humanize.IBytes(uint64(bucketSize)),
-			"target_size", humanize.IBytes(policy.TargetSize))
+			"target_size", humanize.IBytes(uint64(policy.TargetSize)))
 		return 0, nil
 	}
 
@@ -292,7 +320,7 @@ func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolic
 		"to_remove", len(items),
 		"current_size", humanize.IBytes(uint64(bucketSize)),
 		"max_removal_size", humanize.IBytes(uint64(bytesToRemove)),
-		"target_size", humanize.IBytes(policy.TargetSize))
+		"target_size", humanize.IBytes(uint64(policy.TargetSize)))
 
 	removals := make(chan mclient.ObjectInfo, len(items))
 	go func() {
@@ -359,4 +387,29 @@ func (m *MinioManager) clusterStats(ctx context.Context) (*madmin.DataUsageInfo,
 		return nil, err
 	}
 	return &usage, err
+}
+
+type DataSize uint64
+
+// NewDataSize returns a new DataSize, parsed from a human-readable string.
+// ie: "500GB", or "100 MB"
+func NewDataSize(size string) (DataSize, error) {
+	var ds DataSize
+	if err := ds.SetFromString(size); err != nil {
+		return ds, err
+	}
+	return ds, nil
+}
+
+func (s *DataSize) UnmarshalText(text []byte) error {
+	return s.SetFromString(string(text))
+}
+
+func (s *DataSize) SetFromString(size string) error {
+	bsize, err := humanize.ParseBytes(size)
+	if err != nil {
+		return fmt.Errorf("invalid size format %q: %w", size, err)
+	}
+	*s = DataSize(bsize)
+	return nil
 }

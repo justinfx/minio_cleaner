@@ -15,7 +15,7 @@ import (
 
 func newTestStore(t *testing.T) BucketStore {
 	t.Helper()
-	store, err := NewSQLiteBucketStore("")
+	store, err := NewSQLiteBucketStore(StoreConfig{Path: SQLiteInMemory})
 	require.NoError(t, err)
 	store.db.SetMaxOpenConns(1)
 	t.Cleanup(store.Close)

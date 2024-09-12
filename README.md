@@ -8,13 +8,11 @@ to track object access times, and apply cleanup policies.
 
 ## Status
 
-This project is still WIP
-
 - [x] pkg: Nats Jetstream event consumer
 - [x] pkg: SQLite event store
-- [ ] pkg: Minio cleanup policy manager ([#2](https://github.com/justinfx/minio_cleaner/issues/2))
-- [ ] CLI ([#1](https://github.com/justinfx/minio_cleaner/issues/1))
-- [ ] tests: end-to-end tests
+- [x] pkg: Minio cleanup policy manager ([#2](https://github.com/justinfx/minio_cleaner/issues/2))
+- [x] CLI ([#1](https://github.com/justinfx/minio_cleaner/issues/1))
+- [x] tests: end-to-end tests
 - [ ] tests: Docker compose configuration
 
 ## Motivation
@@ -39,6 +37,13 @@ Bucket events are stored in an SQLite database, and updated by access or deletio
 A cleanup policy can be defined, with access to the Minio cluster. Based on cluster size thresholds, the
 cleanup manager can begin deleting objects with the oldest access time, until the cluster size reduces to
 an acceptable value.
+
+## Set up
+
+1. Create a stream in your Nats JetStream service
+2. Set up your Minio cluster with an Event Destination, pointing at the Nats subject and stream (GET/PUT/DELETE)
+3. Enable the event for 1 or more buckets
+4. Define minio_clean config.toml with the details of your minio and nats endpoints, and the bucket cleanup policies
 
 ## Testing
 

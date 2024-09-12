@@ -1,82 +1,116 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"flag"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
-	"time"
 
-	"github.com/dustin/go-humanize"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
+	flag "github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/justinfx/minio_cleaner/pkg"
 )
 
+var logLevel slog.LevelVar
+
 func main() {
-	var level slog.LevelVar
-	level.Set(slog.LevelInfo)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &level}))
-	slog.SetDefault(logger)
+	logLevel.Set(slog.LevelInfo)
 
-	opts := nats.GetDefaultOptions()
+	flag.CommandLine.SortFlags = false
+	flag.Usage = func() {
+		name := filepath.Base(os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s -c|--config <config.toml> [flags]\n", name)
+		flag.PrintDefaults()
+	}
 
-	// flags
-	natsStreamFlag := flag.String("nats-stream", "MINIO", "Nats stream name.")
-	natsDurableFlag := flag.String("nats-durable", "minio-bucket-consumer", "Nats durable name")
-	dbPathFlag := flag.String("db-path", "minio_cleaner.sqlite", "Db path")
-
+	configFlag := flag.StringP("config", "c", "", "config file path")
+	verboseFlag := flag.BoolP("verbose", "v", false, "verbose log output")
+	helpFlag := flag.BoolP("help", "h", false, "print help")
 	flag.Parse()
 
-	stream := *natsStreamFlag
-	durable := *natsDurableFlag
-	dbpath := *dbPathFlag
-
-	// TODO: from flags
-	level.Set(slog.LevelInfo)
-	opts.Servers = []string{"nats://127.0.0.1:4222"}
-	setObjectFromStat := true
-
-	consumer := jetstream.ConsumerConfig{
-		Name:    durable,
-		Durable: durable,
-		// TODO: from flags?
-		InactiveThreshold: 1 * time.Hour,
+	if *helpFlag {
+		flag.Usage()
+		os.Exit(0)
 	}
 
-	// TODO: from flags/config
-	minioCfg := &pkg.MinioConfig{
-		Endpoint:      "localhost:9000",
-		AccessKey:     "minioadmin",
-		SecretKey:     "minioadmin",
-		CheckInterval: 10 * time.Second,
-		BucketPolicies: []*pkg.CleanupPolicy{
-			&pkg.CleanupPolicy{Bucket: "testbucket", TargetSize: 500 * humanize.MiByte},
-		},
+	if *configFlag == "" {
+		flag.Usage()
+		fmt.Fprintln(os.Stderr, "\nconfig flag is required")
+		os.Exit(1)
 	}
 
+	config, err := parseConfig(*configFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if *verboseFlag {
+		config.LogLevel = "debug"
+	}
+	if lvl, err := parseLogLevel(config.LogLevel); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	} else {
+		logLevel.Set(lvl)
+	}
+
+	if err := config.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	setupLogging(config)
+
+	minioSecret := config.MinioConfig.SecretKey
+	config.MinioConfig.SecretKey = "...redacted..."
+	cfgData, _ := json.Marshal(config)
+	var buf bytes.Buffer
+	json.Indent(&buf, cfgData, "", "  ")
+	io.Copy(os.Stdout, &buf)
+	os.Exit(0)
+	slog.Debug("loaded config", "config", string(cfgData))
+	config.MinioConfig.SecretKey = minioSecret
+
+	run(config)
+}
+
+func setupLogging(config *AppConfig) {
+	var logHandler slog.Handler
+	logOpts := &slog.HandlerOptions{Level: &logLevel}
+	if config.LogJson {
+		logHandler = slog.NewJSONHandler(os.Stderr, logOpts)
+	} else {
+		logHandler = slog.NewTextHandler(os.Stderr, logOpts)
+	}
+	slog.SetDefault(slog.New(logHandler))
+}
+
+func run(config *AppConfig) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	evts := make(chan *pkg.BucketEvent)
 
-	receiver := pkg.NewNatsReceiver(opts, stream, consumer)
-	receiver.SetFromStat = setObjectFromStat
+	receiver := pkg.NewNatsReceiver(config.NatsConfig)
+	receiver.SetFromStat = config.SetFromStat
 
-	store, err := pkg.NewSQLiteBucketStore(dbpath)
+	store, err := pkg.NewSQLiteBucketStore(config.StoreConfig)
 	if err != nil {
 		slog.Error("Failed to initialize bucket event store", "error", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
-	manager := pkg.NewMinioManager(minioCfg, store)
+	manager := pkg.NewMinioManager(&config.MinioConfig, store)
 
 	var grp errgroup.Group
 
