@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -73,10 +71,6 @@ func main() {
 	minioSecret := config.MinioConfig.SecretKey
 	config.MinioConfig.SecretKey = "...redacted..."
 	cfgData, _ := json.Marshal(config)
-	var buf bytes.Buffer
-	json.Indent(&buf, cfgData, "", "  ")
-	io.Copy(os.Stdout, &buf)
-	os.Exit(0)
 	slog.Debug("loaded config", "config", string(cfgData))
 	config.MinioConfig.SecretKey = minioSecret
 
