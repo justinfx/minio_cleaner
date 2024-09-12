@@ -25,7 +25,7 @@ secure = false
 # How often to execute the policy checks.
 # If set to 0, no policy checks will be performed.
 # https://pkg.go.dev/time#ParseDuration
-check_interval = "10s"
+check_interval = "10m"
 
     # One or more bucket policies to define the cleanup checks
     # to be performed after the check_interval duration.
