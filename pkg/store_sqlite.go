@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -57,7 +58,11 @@ func NewSQLiteBucketStore(cfg StoreConfig) (*SQLiteBucketStore, error) {
 		cfg.Path = SQLiteInMemory
 	}
 
-	slog.Info("Opening sqlite bucket store", "db", cfg.Path)
+	dbPath, _ := filepath.Abs(cfg.Path)
+	if dbPath == "" {
+		dbPath = cfg.Path
+	}
+	slog.Info("Opening sqlite bucket store", "db", dbPath)
 	db, err := sql.Open("sqlite", cfg.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
