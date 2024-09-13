@@ -60,3 +60,4 @@ changelog:
       - '[tT]ravis'
       - '^ci:'
       - '^merge:'
+      - '^tests:'

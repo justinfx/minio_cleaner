@@ -85,26 +85,28 @@ func StartTestMinio(t *testing.T) *MinioConfig {
 		}()
 
 		<-starting
-		ctx := context.Background()
 
 		admin, err := madmin.NewWithOptions(minioAddr, &madmin.Options{
 			Creds:  mcreds.NewStaticV4(minioTestKey, minioTestPas, ""),
 			Secure: false,
 		})
+		client, err := minio.New(minioAddr, &minio.Options{
+			Creds:  mcreds.NewStaticV4(minioTestKey, minioTestPas, ""),
+			Secure: false,
+		})
+		healthChkCancel, err := client.HealthCheck(1 * time.Second)
 		require.NoError(t, err)
+		defer healthChkCancel()
 
 		for i := 0; i < 200; i++ {
-			if _, err = admin.ServerInfo(ctx); err == nil {
-				_, _, err := admin.ServerHealthInfo(ctx,
-					[]madmin.HealthDataType{madmin.HealthInfoVersion2}, 5*time.Second, "")
-				if err == nil {
-					break
-				}
+			if client.IsOnline() {
 				break
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		require.NoError(t, err, "failed to connect to embedded test minio")
+		if client.IsOffline() {
+			t.Fatal("failed to connect to embedded test minio")
+		}
 
 		shutdownMinioFn := func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
