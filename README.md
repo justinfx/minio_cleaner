@@ -6,15 +6,6 @@
 A service that monitors Minio [bucket notifications](https://min.io/docs/minio/linux/administration/monitoring/bucket-notifications.html) 
 to track object access times, and apply cleanup policies.
 
-## Status
-
-- [x] pkg: Nats Jetstream event consumer
-- [x] pkg: SQLite event store
-- [x] pkg: Minio cleanup policy manager ([#2](https://github.com/justinfx/minio_cleaner/issues/2))
-- [x] CLI ([#1](https://github.com/justinfx/minio_cleaner/issues/1))
-- [x] tests: end-to-end tests
-- [ ] tests: Docker compose configuration
-
 ## Motivation
 
 Minio provides the ability to define a time-to-live policy at a Bucket level. These TTLs have a minimum 
