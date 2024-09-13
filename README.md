@@ -1,6 +1,8 @@
 # Minio Cache Cleaner
 
 [![Build](https://github.com/justinfx/minio_cleaner/workflows/Build%20and%20Release/badge.svg)](https://github.com/justinfx/minio_cleaner/actions?query=workflow%3A%22Build+and+Release%22)
+[![Docker Image Version](https://img.shields.io/docker/v/justinisrael/minio_cleaner?label=Docker)
+](https://hub.docker.com/repository/docker/justinisrael/minio_cleaner/general)
 [![Go Report Card](https://goreportcard.com/badge/github.com/justinfx/minio_cleaner)](https://goreportcard.com/report/github.com/justinfx/minio_cleaner)
 
 A service that monitors Minio [bucket notifications](https://min.io/docs/minio/linux/administration/monitoring/bucket-notifications.html) 
