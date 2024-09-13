@@ -1,0 +1,53 @@
+name: minio_cleaner
+services:
+  minio_cleaner:
+    # Set to desired version of minio_cleaner
+    image: minio_cleaner:latest
+    command: -c /etc/minio_cleaner/config.toml
+    volumes:
+      # Point at a desired host location to persist database file
+      - /tmp/minio_cleaner/db:/var/run/minio_cleaner/db
+      - ./compose.config.toml:/etc/minio_cleaner/config.toml
+    depends_on:
+      - init-nats
+      - init-minio
+
+  minio:
+    image: minio/minio
+    command: server --console-address :9010 /var/run/minio/data
+    ports:
+      - 9000:9000
+      - 9010:9010
+    volumes:
+      - /tmp/minio/data:/var/run/minio/data:rw
+
+  init-minio:
+    image: minio/mc
+    entrypoint: bash
+    command: >
+      -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin 
+      && mc mb local/testbucket -p 
+      && mc event add local/testbucket arn:minio:sqs::cleaner:nats -p
+      "
+    environment:
+      MINIO_NOTIFY_NATS_ENABLE_CLEANER: "on"
+      MINIO_NOTIFY_NATS_JETSTREAM_CLEANER: "on"
+      MINIO_NOTIFY_NATS_ADDRESS_CLEANER: "nats:4222"
+      MINIO_NOTIFY_NATS_SUBJECT_CLEANER: "minio.event"
+    depends_on:
+      - minio
+
+  nats:
+    image: nats
+    command: -js
+    ports:
+      - 4222:4222
+
+  init-nats:
+    image: bitnami/natscli
+    command: stream add --defaults --subjects='minio.event' MINIO
+    environment:
+      NATS_URL: "nats://nats:4222"
+    depends_on:
+      - nats

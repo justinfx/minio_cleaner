@@ -47,7 +47,16 @@ an acceptable value.
 
 ## Testing
 
-WIP (pending a docker compose)
+### Docker compose
+
+See [testing/](testing/)
+
+```
+cd testing/
+docker compose up
+```
+
+### Manual
 
 Start minio
 

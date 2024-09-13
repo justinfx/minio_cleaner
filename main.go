@@ -17,7 +17,10 @@ import (
 	"github.com/justinfx/minio_cleaner/pkg"
 )
 
-var logLevel slog.LevelVar
+var (
+	Version  = "dev"
+	logLevel slog.LevelVar
+)
 
 func main() {
 	logLevel.Set(slog.LevelInfo)
@@ -31,11 +34,17 @@ func main() {
 
 	configFlag := flag.StringP("config", "c", "", "config file path")
 	verboseFlag := flag.BoolP("verbose", "v", false, "verbose log output")
+	versionFlag := flag.BoolP("version", "V", false, "print version")
 	helpFlag := flag.BoolP("help", "h", false, "print help")
 	flag.Parse()
 
 	if *helpFlag {
 		flag.Usage()
+		os.Exit(0)
+	}
+
+	if *versionFlag {
+		fmt.Println(Version)
 		os.Exit(0)
 	}
 
