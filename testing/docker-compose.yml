@@ -2,7 +2,7 @@ name: minio_cleaner
 services:
   minio_cleaner:
     # Set to desired version of minio_cleaner
-    image: minio_cleaner:latest
+    image: justinisrael/minio_cleaner:latest
     command: -c /etc/minio_cleaner/config.toml
     volumes:
       # Point at a desired host location to persist database file
