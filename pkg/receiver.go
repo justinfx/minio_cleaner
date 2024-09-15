@@ -157,10 +157,6 @@ func (r *NatsReceiver) Listen(ctx context.Context, events chan<- *BucketEvent) e
 			continue
 		}
 
-		// TODO: Not sure why the S3 event timestamp has no timezone.
-		//  Use a timestamp from the Nats message which has a timezone.
-		evt.SetEventTime(md.Timestamp)
-
 		slog.Debug("Received BucketEvent", "event", &evt)
 		select {
 		case events <- &evt:
