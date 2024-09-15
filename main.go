@@ -60,6 +60,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	config.LoadEnvVars()
+
 	if *verboseFlag {
 		config.LogLevel = "debug"
 	}

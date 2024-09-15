@@ -71,6 +71,22 @@ durable = "minio-bucket-consumer"
 # If true, use SSL connection
 secure = false
 
+# Nkey sets the public nkey that will be used to authenticate when connecting to the server.
+# Env: NATS_NKEY
+nkey = ""
+
+# User sets the username to be used when connecting to the server.
+# Env: NATS_USER
+user = ""
+
+# Password sets the password to be used when connecting to a server.
+# Env: NATS_PASSWORD
+password = ""
+
+# Token sets the token to be used when connecting to a server.
+# Env: NATS_TOKEN
+token = ""
+
 # The duration after which an inactive consumer should be removed.
 inactive_threshold = "1h"
 

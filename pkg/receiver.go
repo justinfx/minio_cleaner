@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -21,6 +22,10 @@ type NatsConfig struct {
 	DeliveryPolicy    DeliveryPolicy `toml:"delivery_policy"`
 	DeliveryStartSeq  uint64         `toml:"delivery_start_seq"`
 	DeliveryStartTime *time.Time     `toml:"delivery_start_time"`
+	Nkey              string         `toml:"nkey"`
+	User              string         `toml:"user"`
+	Password          string         `toml:"password"`
+	Token             string         `toml:"token"`
 }
 
 func (c *NatsConfig) Validate() error {
@@ -28,6 +33,23 @@ func (c *NatsConfig) Validate() error {
 		return errors.New("stream is required")
 	}
 	return nil
+}
+
+// LoadEnvVars attempts to read a set of configuration values
+// from environment variables, if they are set
+func (c *NatsConfig) LoadEnvVars() {
+	if v := os.Getenv("NATS_NKEY"); v != "" {
+		c.Nkey = v
+	}
+	if v := os.Getenv("NATS_USER"); v != "" {
+		c.User = v
+	}
+	if v := os.Getenv("NATS_PASSWORD"); v != "" {
+		c.Password = v
+	}
+	if v := os.Getenv("NATS_TOKEN"); v != "" {
+		c.Token = v
+	}
 }
 
 type DeliveryPolicy struct {
@@ -56,6 +78,10 @@ func NewNatsReceiver(cfg NatsConfig) *NatsReceiver {
 	connOpts := nats.GetDefaultOptions()
 	connOpts.Servers = cfg.Servers
 	connOpts.Secure = cfg.Secure
+	connOpts.Nkey = cfg.Nkey
+	connOpts.User = cfg.User
+	connOpts.Password = cfg.Password
+	connOpts.Token = cfg.Token
 
 	consumer := jetstream.ConsumerConfig{
 		Name:              cfg.Durable,
@@ -80,7 +106,7 @@ func (r *NatsReceiver) Listen(ctx context.Context, events chan<- *BucketEvent) e
 	defer cancel()
 
 	slog.Info("Connecting to nats", slog.Any("servers", r.connOpts.Servers))
-
+	fmt.Println("nkey", r.connOpts.Nkey)
 	conn, err := r.connOpts.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to nats server: %w", err)

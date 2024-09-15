@@ -34,6 +34,10 @@ func (c *AppConfig) Validate() error {
 	return nil
 }
 
+func (c *AppConfig) LoadEnvVars() {
+	c.NatsConfig.LoadEnvVars()
+}
+
 func parseConfig(path string) (*AppConfig, error) {
 	var config AppConfig
 	fh, err := os.Open(path)
