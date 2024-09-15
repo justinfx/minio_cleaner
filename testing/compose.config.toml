@@ -4,14 +4,13 @@ log_level = "info"
 # Output logging in structured json
 log_json = false
 
-# Catch all Minio stat events (HEAD) and treat them as
-# set operations in the store.
+# Catch all Minio stat events (HEAD) and create the entry in
+# the store, only if the object did not previously exist.
 # This is useful when you want to start up the service
 # in a mode that can be backfilled by running a recursive
-# stat operation in Minio to set objects in the store.
+# stat operation in Minio to set missing objects in the store.
 # Normally you want this disabled so that only object CREATE
-# operations set the new object, and GET operations update
-# the timestamp
+# operations set the new object
 set_from_stat = false
 
 

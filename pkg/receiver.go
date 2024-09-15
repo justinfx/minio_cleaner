@@ -46,7 +46,7 @@ type NatsReceiver struct {
 	stream      string
 
 	// If true, handle object stat (HEAD) requests the same
-	// as set (CREATE). Used for back-filling from object stats.
+	// as set (CREATE if not exists). Used for back-filling from object stats.
 	SetFromStat bool
 }
 
