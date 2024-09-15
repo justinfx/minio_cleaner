@@ -65,12 +65,18 @@ func NewCleanupPolicy(bucket, targetSize string) (*CleanupPolicy, error) {
 // CleanupPolicy defines a policy for a single bucket.
 type CleanupPolicy struct {
 	Bucket string `toml:"bucket"`
+
 	// Target size in bytes of the Minio storage minioUsage, used to trigger cleanups.
 	// If the target size is 0, then the policy will not be executed.
 	TargetSize DataSize `toml:"target_size"`
+
 	// Must be explicitly set to true if you want to set target_size
 	// to 0 and remove all data on each policy execution.
 	AllowRemoveAll bool `toml:"allow_remove_all"`
+
+	// If greater than zero, limit the size of data that will be removed during
+	// each execution of the policy.
+	MaxRemoveSize DataSize `toml:"max_remove_size"`
 }
 
 // Validate returns an error if the policy is not defined correctly.
@@ -308,6 +314,10 @@ func (m *MinioManager) runBucketPolicy(ctx context.Context, policy *CleanupPolic
 			"current_size", humanize.IBytes(uint64(bucketSize)),
 			"target_size", humanize.IBytes(uint64(policy.TargetSize)))
 		return 0, nil
+	}
+
+	if policy.MaxRemoveSize > 0 {
+		bytesToRemove = min(bytesToRemove, int(policy.MaxRemoveSize))
 	}
 
 	items, err := m.store.TakeOldest(policy.Bucket, bytesToRemove)

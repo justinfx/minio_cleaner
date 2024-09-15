@@ -39,6 +39,10 @@ check_interval = "10m"
     # https://pkg.go.dev/github.com/dustin/go-humanize
     target_size = "500 MiB"
 
+    # Optionally, if greater than zero, remove up to a max size of object
+    # data during each execution of the policy.
+    #max_remove_size = "0 MB"
+
     # Must be explicitly defined if you want to set target_size
     # to 0 and remove all data on each policy execution.
     allow_remove_all = false

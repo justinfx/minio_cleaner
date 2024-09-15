@@ -215,3 +215,54 @@ func TestMinioManager_runOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestMinioManager_MaxRemoveSize(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	bucket := "maxremovesize1"
+	manager := NewTestMinioManager(t, bucket)
+
+	N := 100
+	size := 1 * humanize.Byte
+
+	put := func() {
+		for i := range N {
+			PutObject(t, manager, bucket, fmt.Sprintf("key%d", i), int64(size))
+		}
+	}
+
+	put()
+	manager.cfg.BucketPolicies = []*CleanupPolicy{
+		{Bucket: bucket, TargetSize: 10 * humanize.Byte},
+	}
+	// no max size
+	require.NoError(t, manager.runOnce(ctx))
+	count, err := manager.store.Count(bucket)
+	require.NoError(t, err)
+	assert.Equal(t, 10, count, "wrong count")
+
+	ClearBucket(t, manager, bucket)
+	put()
+	manager.cfg.BucketPolicies = []*CleanupPolicy{
+		{Bucket: bucket, TargetSize: 10 * humanize.Byte, MaxRemoveSize: 25 * humanize.Byte},
+	}
+	// up to 25 bytes at a time
+	require.NoError(t, manager.runOnce(ctx))
+	count, err = manager.store.Count(bucket)
+	require.NoError(t, err)
+	assert.Equal(t, 75, count, "wrong count")
+
+	// up to 25 bytes at a time * 2
+	require.NoError(t, manager.runOnce(ctx))
+	require.NoError(t, manager.runOnce(ctx))
+	count, err = manager.store.Count(bucket)
+	require.NoError(t, err)
+	assert.Equal(t, 25, count, "wrong count")
+
+	// up to 25 bytes at a time, but the target is still 10 at the end
+	require.NoError(t, manager.runOnce(ctx))
+	count, err = manager.store.Count(bucket)
+	require.NoError(t, err)
+	assert.Equal(t, 10, count, "wrong count")
+}

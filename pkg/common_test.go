@@ -164,3 +164,21 @@ func PutObject(t *testing.T, manager *MinioManager, bucket, key string, size int
 		Size:       int(size),
 	}))
 }
+
+func ClearBucket(t *testing.T, manager *MinioManager, bucket string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	objs := manager.mclient.ListObjects(ctx, bucket, minio.ListObjectsOptions{Recursive: true})
+	results := manager.mclient.RemoveObjectsWithResult(ctx, bucket, objs, minio.RemoveObjectsOptions{})
+
+	for res := range results {
+		if res.Err != nil {
+			t.Logf("failed to remove object: %s", res.Err)
+		}
+		require.NoError(t, manager.store.Delete(&BucketStoreItem{
+			Bucket: bucket,
+			Key:    res.ObjectName,
+		}))
+	}
+}
