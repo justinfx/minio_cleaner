@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/nats-io/nkeys"
 )
 
 type NatsConfig struct {
@@ -23,6 +25,7 @@ type NatsConfig struct {
 	DeliveryStartSeq  uint64         `toml:"delivery_start_seq"`
 	DeliveryStartTime *time.Time     `toml:"delivery_start_time"`
 	Nkey              string         `toml:"nkey"`
+	NkeyPrivate       string         `toml:"nkey_private"`
 	User              string         `toml:"user"`
 	Password          string         `toml:"password"`
 	Token             string         `toml:"token"`
@@ -40,6 +43,9 @@ func (c *NatsConfig) Validate() error {
 func (c *NatsConfig) LoadEnvVars() {
 	if v := os.Getenv("NATS_NKEY"); v != "" {
 		c.Nkey = v
+	}
+	if v := os.Getenv("NATS_NKEY_PRIVATE"); v != "" {
+		c.NkeyPrivate = v
 	}
 	if v := os.Getenv("NATS_USER"); v != "" {
 		c.User = v
@@ -82,6 +88,23 @@ func NewNatsReceiver(cfg NatsConfig) *NatsReceiver {
 	connOpts.User = cfg.User
 	connOpts.Password = cfg.Password
 	connOpts.Token = cfg.Token
+
+	// used if Nkey is set
+	if connOpts.Nkey != "" {
+		connOpts.SignatureCB = func(nonce []byte) ([]byte, error) {
+			seed := []byte(cfg.NkeyPrivate)
+			if keyData, err := os.ReadFile(cfg.NkeyPrivate); err == nil {
+				if keyData = bytes.TrimSpace(keyData); len(keyData) > 0 {
+					seed = keyData
+				}
+			}
+			u, err := nkeys.FromSeed(seed)
+			if err != nil {
+				return nil, err
+			}
+			return u.Sign(nonce)
+		}
+	}
 
 	consumer := jetstream.ConsumerConfig{
 		Name:              cfg.Durable,

@@ -75,6 +75,12 @@ secure = false
 # Env: NATS_NKEY
 nkey = ""
 
+# Nkey sets the public nkey that will be used to authenticate when connecting to the server.
+# If the value is an existing file containing the private key, it will be read. Otherwise
+# it is treated as the literal private key value.
+# Env: NATS_NKEY_PRIVATE
+nkey_private = ""
+
 # User sets the username to be used when connecting to the server.
 # Env: NATS_USER
 user = ""
